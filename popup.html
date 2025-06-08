@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Explain It to Me</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="popup-header">
+      <div class="popup-icon">
+        <div class="icon-gradient">✨</div>
+      </div>
+      <div class="header-content">
+        <h1>Explain It to Me</h1>
+        <p>AI-powered text simplification</p>
+      </div>
+    </div>
+
+    <div class="popup-content">
+      <div class="welcome-section">
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="feature-icon">🎈</div>
+            <h3>Kid-Friendly</h3>
+            <p>Simple explanations for everyone</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🎓</div>
+            <h3>Academic</h3>
+            <p>Perfect for students</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🏛️</div>
+            <h3>Professional</h3>
+            <p>Detailed analysis</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🔬</div>
+            <h3>Expert</h3>
+            <p>Technical insights</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="instructions-section">
+        <h3>🚀 How to Use</h3>
+        <div class="instruction-steps">
+          <div class="instruction-step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <h4>Select Text</h4>
+              <p>Highlight any text on any webpage</p>
+            </div>
+          </div>
+          <div class="instruction-step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <h4>Right-Click</h4>
+              <p>Choose "Explain It to Me" from menu</p>
+            </div>
+          </div>
+          <div class="instruction-step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <h4>Pick Level</h4>
+              <p>Select your preferred explanation style</p>
+            </div>
+          </div>
+          <div class="instruction-step">
+            <div class="step-number">4</div>
+            <div class="step-content">
+              <h4>Learn!</h4>
+              <p>Read the AI-generated explanation</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>⚙️ Preferences</h3>
+        <div class="form-group">
+          <label for="defaultLevel">Default Explanation Level</label>
+          <select id="defaultLevel" class="styled-select">
+            <option value="grade5">🎈 Kid-Friendly (Like I'm 5)</option>
+            <option value="highschool">🎓 High School Level</option>
+            <option value="college">🏛️ College Level</option>
+            <option value="expert">🔬 Expert Analysis</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="stats-section">
+        <div class="stat-card">
+          <div class="stat-number" id="explanationCount">0</div>
+          <div class="stat-label">Explanations</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="favoriteLevel">🎓</div>
+          <div class="stat-label">Favorite Level</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="popup-footer">
+      <button id="saveSettings" class="btn btn-primary">
+        <span class="btn-icon">💾</span>
+        Save Preferences
+      </button>
+    </div>
+
+    <div id="status" class="status hidden"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
