@@ -141,8 +141,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // Function to simplify text using pre-configured ChatGPT API
 async function simplifyText(text, level) {
   // Using pre-configured API key - no user input needed
-  const API_KEY = '7w977KEtai9oiowyYT2fTg8Lzt9c44fsZolH59mGqZgYQX7w9VJOJQQJ99BEACYeBjFXJ3w3AAABACOGXAy3';
-  const ENDPOINT = 'https://uamas.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2025-01-01-preview';
+  
+
+  const API_KEY = 'YOUR_PRECONFIGURED_API_KEY_HERE'; // Replace with your actual API key
+  const ENDPOINT = 'https://api.openai.com/v1/chat/completions';
   
   if (!API_KEY || API_KEY === 'YOUR_PRECONFIGURED_API_KEY_HERE') {
     throw new Error('API key not configured. Please set up your ChatGPT API key.');
