@@ -1,90 +1,153 @@
-// background.js
-
-// 1) When the extension is installed, build your context‐menu hierarchy
+// Background script for handling API calls and context menus
 chrome.runtime.onInstalled.addListener(() => {
+  // Create context menu items for different simplification levels
   const levels = [
-    { id: 'grade5',     title: '🎈 Like I\'m 5 years old' },
-    { id: 'highschool', title: '🎓 High School Level' },
-    { id: 'college',    title: '🏛️ College Level' },
-    { id: 'expert',     title: '🔬 Expert Analysis' }
+    { id: 'grade5', title: '🎈 Like I\'m 5 years old', emoji: '🎈' },
+    { id: 'highschool', title: '🎓 High School Level', emoji: '🎓' },
+    { id: 'college', title: '🏛️ College Level', emoji: '🏛️' },
+    { id: 'expert', title: '🔬 Expert Analysis', emoji: '🔬' }
   ];
 
+  // Create parent menu item
   chrome.contextMenus.create({
     id: 'explainItToMe',
     title: '✨ Explain It to Me',
     contexts: ['selection']
   });
 
-  levels.forEach(lvl => {
+  // Create submenu items for each level
+  levels.forEach(level => {
     chrome.contextMenus.create({
-      id: lvl.id,
+      id: level.id,
       parentId: 'explainItToMe',
-      title: lvl.title,
+      title: level.title,
       contexts: ['selection']
     });
   });
 });
 
-// 2) On click: inject content.js, then send the loading → result/error
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.parentMenuItemId !== 'explainItToMe' || !tab?.id) return;
-  const level = info.menuItemId;
-  const text  = info.selectionText;
-
-  // remember last level
-  await chrome.storage.local.set({ lastUsedLevel: level });
-
-  // inject your content script right now
+// Ensure content script is injected and ready
+async function ensureContentScript(tabId) {
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['content.js']
-    });
-  } catch (err) {
-    console.error('Could not inject content.js:', err);
-    return;                   // if inject fails, abort
-  }
-
-  // tell it to show loading spinner
-  chrome.tabs.sendMessage(tab.id, {
-    action: 'showLoading',
-    level
-  }).catch(err => {
-    console.warn('sendMessage(showLoading) failed:', err.message);
-  });
-
-  // call your AI…
-  try {
-    const explanation = await simplifyText(text, level);
-
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'showExplanation',
-      explanation,
-      originalText: text,
-      level
-    }).catch(err => {
-      console.warn('sendMessage(showExplanation) failed:', err.message);
-    });
-
+    // Try to ping the content script
+    await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+    return true;
   } catch (error) {
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'showError',
-      error: error.message
-    }).catch(err => {
-      console.warn('sendMessage(showError) failed:', err.message);
-    });
+    // Content script not ready, inject it
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ['content.js']
+      });
+      
+      await chrome.scripting.insertCSS({
+        target: { tabId: tabId },
+        files: ['content.css']
+      });
+      
+      // Wait a bit for the script to initialize
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Try to ping again
+      await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+      return true;
+    } catch (injectError) {
+      console.error('Failed to inject content script:', injectError);
+      return false;
+    }
+  }
+}
+
+// Send message with retry logic
+async function sendMessageWithRetry(tabId, message, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, message);
+      return response;
+    } catch (error) {
+      console.warn(`Message attempt ${i + 1} failed:`, error.message);
+      
+      if (i === maxRetries - 1) {
+        throw error;
+      }
+      
+      // Try to ensure content script is ready before retrying
+      await ensureContentScript(tabId);
+      await new Promise(resolve => setTimeout(resolve, 100 * (i + 1)));
+    }
+  }
+}
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.parentMenuItemId === 'explainItToMe' && tab?.id) {
+    const selectedText = info.selectionText;
+    const level = info.menuItemId;
+    
+    try {
+      // Store the last used level
+      await chrome.storage.local.set({ lastUsedLevel: level });
+      
+      // Ensure content script is ready
+      const isReady = await ensureContentScript(tab.id);
+      if (!isReady) {
+        console.error('Could not prepare content script');
+        return;
+      }
+      
+      // Send loading message
+      await sendMessageWithRetry(tab.id, {
+        action: 'showLoading',
+        level: level
+      });
+      
+      // Get explanation from API
+      const explanation = await simplifyText(selectedText, level);
+      
+      // Send the result to content script
+      await sendMessageWithRetry(tab.id, {
+        action: 'showExplanation',
+        explanation: explanation,
+        originalText: selectedText,
+        level: level
+      });
+      
+      // Update usage statistics
+      await updateUsageStats(level);
+      
+    } catch (error) {
+      console.error('Error processing explanation:', error);
+      
+      // Try to send error message
+      try {
+        await sendMessageWithRetry(tab.id, {
+          action: 'showError',
+          error: error.message || 'Something went wrong. Please try again.'
+        });
+      } catch (msgError) {
+        console.error('Failed to send error message:', msgError);
+        // Fallback: show browser notification
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icons/icon48.png',
+          title: 'Explain It to Me',
+          message: 'Failed to process explanation. Please try again.'
+        });
+      }
+    }
   }
 });
 
-
-// ——————————————
-// Your existing simplifyText() goes here verbatim
-// ——————————————
-
+// Function to simplify text using pre-configured ChatGPT API
 async function simplifyText(text, level) {
-  const API_KEY = 'AZURE_API_KEY';
-  const ENDPT   = 'AZURE_ENDPOINT';
-
+  // Using pre-configured API key - no user input needed
+  const API_KEY = '7w977KEtai9oiowyYT2fTg8Lzt9c44fsZolH59mGqZgYQX7w9VJOJQQJ99BEACYeBjFXJ3w3AAABACOGXAy3';
+  const ENDPOINT = 'https://uamas.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2025-01-01-preview';
+  
+  if (!API_KEY || API_KEY === 'YOUR_PRECONFIGURED_API_KEY_HERE') {
+    throw new Error('API key not configured. Please set up your ChatGPT API key.');
+  }
+  
   const systemPrompts = {
     grade5: `You are an expert at explaining complex topics to 5th graders (ages 10-11). 
              Break down the text using simple words, short sentences, and relatable examples. 
@@ -105,38 +168,79 @@ async function simplifyText(text, level) {
              Include relevant context, implications, and connections to broader concepts in the field.`
   };
 
-  const res = await fetch(ENDPT, {
+  const response = await fetch(ENDPOINT, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${API_KEY}`,
-      'Content-Type':  'application/json'
+      'Content-Type': 'application/json'
     },
     body: JSON.stringify({
       model: 'gpt-4o',
       messages: [
-        { role: 'system', content: systemPrompts[level] },
-        { role: 'user',   content: text }
+        {
+          role: 'system',
+          content: systemPrompts[level]
+        },
+        {
+          role: 'user',
+          content: `Please explain this text in detail: "${text}"`
+        }
       ],
       max_tokens: 600,
       temperature: 0.7
     })
   });
 
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || 'API error');
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(`API Error: ${errorData.error?.message || 'Service temporarily unavailable'}`);
   }
-  const data = await res.json();
-  console.log(data.choices[0].message.content)
+
+  const data = await response.json();
   return data.choices[0].message.content;
 }
 
+// Update usage statistics
+async function updateUsageStats(level) {
+  try {
+    const result = await chrome.storage.local.get(['explanationCount', 'levelUsage']);
+    
+    const newCount = (result.explanationCount || 0) + 1;
+    const levelUsage = result.levelUsage || {};
+    levelUsage[level] = (levelUsage[level] || 0) + 1;
+    
+    await chrome.storage.local.set({
+      explanationCount: newCount,
+      levelUsage: levelUsage
+    });
+  } catch (error) {
+    console.error('Failed to update usage statistics:', error);
+  }
+}
 
-// 3) Allow popup/content.js to query lastUsedLevel
+// Handle messages from content script or popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getLastUsedLevel') {
-    chrome.storage.local.get('lastUsedLevel')
-      .then(r => sendResponse({ lastUsedLevel: r.lastUsedLevel || 'highschool' }));
-    return true;  // keep sendResponse alive
+    chrome.storage.local.get(['lastUsedLevel']).then(result => {
+      sendResponse({ lastUsedLevel: result.lastUsedLevel || 'highschool' });
+    }).catch(error => {
+      sendResponse({ lastUsedLevel: 'highschool' });
+    });
+    return true; // Keep sendResponse alive for async response
+  }
+  
+  if (request.action === 'getUsageStats') {
+    chrome.storage.local.get(['explanationCount', 'levelUsage']).then(result => {
+      sendResponse({ 
+        explanationCount: result.explanationCount || 0,
+        levelUsage: result.levelUsage || {}
+      });
+    }).catch(error => {
+      sendResponse({ 
+        explanationCount: 0,
+        levelUsage: {}
+      });
+    });
+    return true;
   }
 });
