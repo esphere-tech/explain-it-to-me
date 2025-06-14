@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Explain It to Me - AI Text Simplifier",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Transform complex text into clear explanations with AI - from beginner to expert level",
   "permissions": [
     "activeTab",
