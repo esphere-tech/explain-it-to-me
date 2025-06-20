@@ -1,4 +1,4 @@
-import { simplifyText } from './api_v1.js';
+import { simplifyText } from './api_v2.js';
 
 // Background script for handling API calls and context menus
 chrome.runtime.onInstalled.addListener(() => {
