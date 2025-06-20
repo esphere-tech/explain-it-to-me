@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Explain It to Me - AI Text Simplifier",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "Transform complex text into clear explanations with AI - from beginner to expert level",
   "permissions": [
     "activeTab",
@@ -10,18 +10,26 @@
     "scripting",
     "notifications"
   ],
-    "host_permissions": [
+  "host_permissions": [
     "https://api.openai.com/*",
     "https://uamas.openai.azure.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "libs/marked.min.js",
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_end"
     }
   ],

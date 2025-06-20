@@ -26,7 +26,7 @@
 .explainer-modal-content {
   background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%) !important;
   border-radius: 20px !important;
-  box-shadow: 
+  box-shadow:
     0 25px 50px -12px rgba(0, 0, 0, 0.25),
     0 0 0 1px rgba(255, 255, 255, 0.8),
     inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
@@ -67,7 +67,7 @@
   left: 0 !important;
   right: 0 !important;
   bottom: 0 !important;
-  background: linear-gradient(45deg, rgba(255,255,255,0.1) 0%, transparent 50%) !important;
+  background: linear-gradient(45deg, rgba(255, 255, 255, 0.1) 0%, transparent 50%) !important;
   pointer-events: none !important;
 }
 
@@ -78,7 +78,7 @@
   display: flex !important;
   align-items: center !important;
   gap: 12px !important;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
   color: white !important;
 }
 
@@ -240,7 +240,7 @@
   left: -100% !important;
   width: 100% !important;
   height: 100% !important;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent) !important;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent) !important;
   transition: left 0.5s !important;
 }
 
@@ -304,8 +304,13 @@
 }
 
 @keyframes explainer-spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .explainer-loading p {
@@ -321,10 +326,24 @@
 }
 
 @keyframes explainer-dots {
-  0%, 20% { content: ''; }
-  40% { content: '.'; }
-  60% { content: '..'; }
-  80%, 100% { content: '...'; }
+
+  0%,
+  20% {
+    content: '';
+  }
+
+  40% {
+    content: '.';
+  }
+
+  60% {
+    content: '..';
+  }
+
+  80%,
+  100% {
+    content: '...';
+  }
 }
 
 /* Enhanced error state */
@@ -353,24 +372,24 @@
     max-height: 92vh !important;
     border-radius: 16px !important;
   }
-  
+
   .explainer-header {
     padding: 20px 24px !important;
   }
-  
+
   .explainer-header h3 {
     font-size: 20px !important;
   }
-  
+
   .explainer-body {
     padding: 24px 20px !important;
   }
-  
+
   .explainer-footer {
     padding: 20px 24px !important;
     flex-direction: column !important;
   }
-  
+
   .explainer-btn {
     width: 100% !important;
     justify-content: center !important;
@@ -383,9 +402,11 @@
     opacity: 0;
     transform: scale(0.8) translateY(40px) rotate(2deg);
   }
+
   50% {
     transform: scale(1.02) translateY(-5px) rotate(-1deg);
   }
+
   100% {
     opacity: 1;
     transform: scale(1) translateY(0) rotate(0deg);
@@ -403,9 +424,17 @@
 
 /* Success animation for copy button */
 @keyframes success-pulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+
+  100% {
+    transform: scale(1);
+  }
 }
 
 .explainer-btn.success {
