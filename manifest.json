@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Explain It to Me - AI Text Simplifier",
-  "version": "2.2.0",
+  "version": "2.3.2",
   "description": "Transform complex text into clear explanations with AI - from beginner to expert level",
   "permissions": [
     "activeTab",
@@ -12,7 +12,9 @@
   ],
   "host_permissions": [
     "https://api.openai.com/*",
-    "https://uamas.openai.azure.com/*"
+    "https://uamas.openai.azure.com/*",
+    "https://api-inference.huggingface.co/*",
+    "https://router.huggingface.co/*"
   ],
   "background": {
     "service_worker": "background.js",

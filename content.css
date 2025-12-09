@@ -1,4 +1,5 @@
 /* Enhanced modal styles with bulletproof protection */
+
 .explainer-modal {
   position: fixed !important;
   top: 0 !important;
@@ -487,3 +488,16 @@
 .explainer-modal.explainer-show[style*="opacity: 0"] {
   opacity: 1 !important;
 }
+
+/* new additions */
+.explainer-content h1,
+.explainer-content h2,
+.explainer-content h3 { margin: 16px 0 8px; font-weight: 600; }
+.explainer-content p { margin: 8px 0; line-height: 1.6; }
+.explainer-content ul, .explainer-content ol { margin: 8px 0; padding-left: 24px; }
+.explainer-content li { margin: 4px 0; }
+.explainer-content code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+.explainer-content pre { background: #1e293b; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+.explainer-content pre code { background: none; padding: 0; }
+.explainer-content strong { font-weight: 600; }
+.explainer-content blockquote { border-left: 3px solid #667eea; padding-left: 12px; margin: 8px 0; color: #64748b; }

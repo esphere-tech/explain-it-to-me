@@ -1,12 +1,15 @@
-const marked = window.marked;
+// const marked = window.marked;
+function getMarked() {
+  return window.marked;
+}
 
-// Enhanced content script with bulletproof modal handling
+// Enhanced content script with Shadow DOM isolation
 let currentModal = null;
 let isInitialized = false;
-let modalContainer = null;
-let modalLocked = false; // Prevent accidental closures during critical operations
-let isClosing = false; // Prevent double-closing
-let pendingClose = false; // Handle queued close operations
+let shadowRoot = null;
+let shadowHost = null;
+let modalLocked = false;
+let isClosing = false;
 
 // Initialize the content script only once
 function init() {
@@ -15,88 +18,26 @@ function init() {
 
   console.log('Explain It to Me content script initialized');
 
-  // Create a dedicated container for our modals
-  createModalContainer();
-
-  // Clean up any existing modals
-  removeModal();
+  // Create Shadow DOM container for isolation
+  createShadowContainer();
 
   // Listen for messages from background script
   chrome.runtime.onMessage.addListener(handleMessage);
 
-  // Add escape key listener with protection
+  // Add escape key listener
   document.addEventListener('keydown', handleKeyDown, true);
-
-  // Prevent page scripts from interfering
-  protectFromPageInterference();
 }
 
-// Protect modal from page interference
-function protectFromPageInterference() {
-  // Store original methods
-  const originalRemove = Element.prototype.remove;
-  const originalSetAttribute = Element.prototype.setAttribute;
-  const originalRemoveChild = Node.prototype.removeChild;
+// Create Shadow DOM container - this naturally isolates our modal
+function createShadowContainer() {
+  // Remove any existing container
+  const existing = document.getElementById('explainer-shadow-host');
+  if (existing) existing.remove();
 
-  // Override remove method
-  Element.prototype.remove = function () {
-    // Don't allow page scripts to remove our modal unless we're intentionally closing
-    if ((this.id === 'explainer-modal-container' ||
-      this.classList?.contains('explainer-modal')) && !isClosing) {
-      console.log('🛡️ Blocked attempt to remove modal');
-      return;
-    }
-    return originalRemove.call(this);
-  };
-
-  // Override removeChild method
-  Node.prototype.removeChild = function (child) {
-    // Don't allow page scripts to remove our modal unless we're intentionally closing
-    if ((child.id === 'explainer-modal-container' ||
-      child.classList?.contains('explainer-modal')) && !isClosing) {
-      console.log('🛡️ Blocked attempt to removeChild modal');
-      return child;
-    }
-    return originalRemoveChild.call(this, child);
-  };
-
-  // Protect against style changes
-  Element.prototype.setAttribute = function (name, value) {
-    if ((this.id === 'explainer-modal-container' ||
-      this.classList?.contains('explainer-modal')) &&
-      (name === 'style' || name === 'class') && !isClosing) {
-      console.log('🛡️ Blocked attempt to modify modal attributes');
-      return;
-    }
-    return originalSetAttribute.call(this, name, value);
-  };
-}
-
-// Enhanced keydown handler
-function handleKeyDown(e) {
-  if (e.key === 'Escape' && currentModal && !modalLocked) {
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    closeModal();
-  }
-}
-
-// Create a dedicated container for our modals to avoid conflicts
-function createModalContainer() {
-  if (modalContainer && document.contains(modalContainer)) return;
-
-  // Remove any existing container first
-  const existing = document.getElementById('explainer-modal-container');
-  if (existing) {
-    isClosing = true;
-    existing.remove();
-    isClosing = false;
-  }
-
-  modalContainer = document.createElement('div');
-  modalContainer.id = 'explainer-modal-container';
-  modalContainer.style.cssText = `
+  // Create shadow host element
+  shadowHost = document.createElement('div');
+  shadowHost.id = 'explainer-shadow-host';
+  shadowHost.style.cssText = `
     position: fixed !important;
     top: 0 !important;
     left: 0 !important;
@@ -106,35 +47,31 @@ function createModalContainer() {
     pointer-events: none !important;
   `;
 
-  // Append to body or html if body doesn't exist
-  const target = document.body || document.documentElement;
-  target.appendChild(modalContainer);
+  // Attach shadow DOM (closed mode for extra protection)
+  shadowRoot = shadowHost.attachShadow({ mode: 'closed' });
 
-  // Re-append if it gets removed (but not during intentional closing)
-  const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.type === 'childList' && !isClosing) {
-        mutation.removedNodes.forEach((node) => {
-          if (node === modalContainer) {
-            console.log('🔄 Modal container was removed, re-adding...');
-            setTimeout(() => {
-              if (!document.contains(modalContainer) && !isClosing) {
-                target.appendChild(modalContainer);
-              }
-            }, 10);
-          }
-        });
-      }
-    });
-  });
+  // Inject styles into shadow DOM
+  const styleSheet = document.createElement('style');
+  styleSheet.textContent = getModalStyles();
+  shadowRoot.appendChild(styleSheet);
 
-  observer.observe(target, { childList: true });
+  // Append to document
+  (document.body || document.documentElement).appendChild(shadowHost);
+}
+
+// Handle keydown events
+function handleKeyDown(e) {
+  if (e.key === 'Escape' && currentModal && !modalLocked) {
+    e.preventDefault();
+    e.stopPropagation();
+    closeModal();
+  }
 }
 
 // Handle messages from background script
 function handleMessage(request, sender, sendResponse) {
   try {
-    console.log('📨 Content script received message:', request.action);
+    console.log('📨 Received:', request.action);
 
     switch (request.action) {
       case 'ping':
@@ -156,28 +93,24 @@ function handleMessage(request, sender, sendResponse) {
         sendResponse({ success: false, error: 'Unknown action' });
     }
   } catch (error) {
-    console.error('❌ Error handling message:', error);
+    console.error('❌ Error:', error);
     sendResponse({ success: false, error: error.message });
   }
-
-  return true; // Keep sendResponse alive
+  return true;
 }
 
-// Create and show enhanced loading modal
+// Show loading modal
 function showLoadingModal(level) {
-  console.log('🔄 Showing loading modal for level:', level);
+  removeModal();
+  modalLocked = true;
+  shadowHost.style.pointerEvents = 'auto';
 
-  // Clean removal of existing modal
-  cleanRemoveModal();
-
-  modalLocked = true; // Lock during loading to prevent accidental closure
-
-  const modal = createModal();
+  const modal = document.createElement('div');
+  modal.className = 'explainer-modal';
   modal.innerHTML = `
     <div class="explainer-modal-content explainer-loading">
       <div class="explainer-header">
-        <h3>
-          ${getLevelEmoji(level)} AI is thinking...
+        <h3>${getLevelEmoji(level)} AI is thinking...
           <span class="explainer-level-badge">${getLevelName(level)}</span>
         </h3>
         <button class="explainer-close" type="button">&times;</button>
@@ -189,107 +122,85 @@ function showLoadingModal(level) {
     </div>
   `;
 
-  // Add event listeners after creating the modal
   addModalEventListeners(modal);
-
-  modalContainer.appendChild(modal);
+  shadowRoot.appendChild(modal);
   currentModal = modal;
 
-  // Animate in
   requestAnimationFrame(() => {
     modal.classList.add('explainer-show');
-    // Unlock after animation completes
-    setTimeout(() => {
-      modalLocked = false;
-    }, 500);
+    setTimeout(() => { modalLocked = false; }, 500);
   });
 }
 
-// Create and show enhanced explanation modal - FIXED VERSION
+// Show explanation modal
 function showExplanationModal(explanation, originalText, level) {
-  console.log('✨ Showing explanation modal for level:', level);
+  modalLocked = false;
 
-  // Don't remove the current modal immediately - transition smoothly
   if (currentModal) {
-    // Update the existing modal content instead of removing and recreating
-    updateModalToExplanation(explanation, originalText, level);
+    // Update existing modal
+    const content = currentModal.querySelector('.explainer-modal-content');
+    if (content) {
+      content.style.opacity = '0.7';
+      setTimeout(() => {
+        updateModalContent(content, explanation, originalText, level);
+        content.classList.remove('explainer-loading');
+        content.style.opacity = '1';
+      }, 150);
+    }
   } else {
-    // Create new modal if none exists
-    createExplanationModal(explanation, originalText, level);
+    createNewExplanationModal(explanation, originalText, level);
   }
 }
 
-// Update existing modal to show explanation content
-function updateModalToExplanation(explanation, originalText, level) {
-  if (!currentModal) return;
+function updateModalContent(content, explanation, originalText, level) {
+  const markedLib = getMarked();
+  const html = (markedLib && typeof markedLib.parse === 'function')
+    ? markedLib.parse(explanation)
+    : explanation;
 
-  modalLocked = false; // Allow closing for explanation modal
-  const escapedExplanation = escapeForTemplate(explanation);
-
-  // Update the modal content with smooth transition
-  const modalContent = currentModal.querySelector('.explainer-modal-content');
-  if (modalContent) {
-    // Add transition class
-    modalContent.style.transition = 'all 0.3s ease';
-    modalContent.style.opacity = '0.7';
-
-    setTimeout(() => {
-      const html = (marked && typeof marked.parse === 'function')
-        ? marked.parse(explanation)
-        : explanation; // fallback to plain text
-
-      modalContent.innerHTML = `
-        <div class="explainer-header">
-          <h3>
-            ${getLevelEmoji(level)} Explanation Ready!
-            <span class="explainer-level-badge">${getLevelName(level)}</span>
-          </h3>
-          <button class="explainer-close" type="button">&times;</button>
-        </div>
-        <div class="explainer-body">
-          <div class="explainer-original">
-            <h4>📝 Original Text</h4>
-            <p>"${truncateText(originalText, 250)}"</p>
-          </div>
-          <div class="explainer-explanation">
-            <h4>✨ ${getLevelName(level)} Explanation</h4>
-            <div class="explainer-content">${html}</div>
-          </div>
-        </div>
-        <div class="explainer-footer">
-          <button class="explainer-btn explainer-btn-secondary explainer-copy-btn" type="button" data-text="${escapedExplanation}">
-            📋 Copy Explanation
-          </button>
-          <button class="explainer-btn explainer-btn-primary explainer-close-btn" type="button">
-            🎉 Perfect, thanks!
-          </button>
-        </div>
-      `;
-
-      // Remove loading class and restore opacity
-      modalContent.classList.remove('explainer-loading');
-      modalContent.style.opacity = '1';
-
-      // Re-add event listeners for the new content
-      addModalEventListeners(currentModal);
-
-      console.log('✅ Modal content updated to explanation successfully');
-    }, 150);
-  }
+  content.innerHTML = `
+    <div class="explainer-header">
+      <h3>${getLevelEmoji(level)} Explanation Ready!
+        <span class="explainer-level-badge">${getLevelName(level)}</span>
+      </h3>
+      <button class="explainer-close" type="button">&times;</button>
+    </div>
+    <div class="explainer-body">
+      <div class="explainer-original">
+        <h4>📝 Original Text</h4>
+        <p>"${truncateText(originalText, 250)}"</p>
+      </div>
+      <div class="explainer-explanation">
+        <h4>✨ ${getLevelName(level)} Explanation</h4>
+        <div class="explainer-content">${html}</div>
+      </div>
+    </div>
+    <div class="explainer-footer">
+      <button class="explainer-btn explainer-btn-secondary explainer-copy-btn" type="button" data-text="${escapeForTemplate(explanation)}">
+        📋 Copy Explanation
+      </button>
+      <button class="explainer-btn explainer-btn-primary explainer-close-btn" type="button">
+        🎉 Perfect, thanks!
+      </button>
+    </div>
+  `;
+  addModalEventListeners(currentModal);
 }
 
-// Create new explanation modal
-function createExplanationModal(explanation, originalText, level) {
-  modalLocked = false; // Allow closing for explanation modal
+function createNewExplanationModal(explanation, originalText, level) {
+  shadowHost.style.pointerEvents = 'auto';
+  const modal = document.createElement('div');
+  modal.className = 'explainer-modal';
 
-  const modal = createModal();
-  const escapedExplanation = escapeForTemplate(explanation);
+  const markedLib = getMarked();
+  const html = (markedLib && typeof markedLib.parse === 'function')
+    ? markedLib.parse(explanation)
+    : explanation;
 
   modal.innerHTML = `
     <div class="explainer-modal-content">
       <div class="explainer-header">
-        <h3>
-          ${getLevelEmoji(level)} Explanation Ready!
+        <h3>${getLevelEmoji(level)} Explanation Ready!
           <span class="explainer-level-badge">${getLevelName(level)}</span>
         </h3>
         <button class="explainer-close" type="button">&times;</button>
@@ -301,11 +212,11 @@ function createExplanationModal(explanation, originalText, level) {
         </div>
         <div class="explainer-explanation">
           <h4>✨ ${getLevelName(level)} Explanation</h4>
-          <div class="explainer-content">${marked.parse(explanation)}</div>
+          <div class="explainer-content">${html}</div>
         </div>
       </div>
       <div class="explainer-footer">
-        <button class="explainer-btn explainer-btn-secondary explainer-copy-btn" type="button" data-text="${escapedExplanation}">
+        <button class="explainer-btn explainer-btn-secondary explainer-copy-btn" type="button" data-text="${escapeForTemplate(explanation)}">
           📋 Copy Explanation
         </button>
         <button class="explainer-btn explainer-btn-primary explainer-close-btn" type="button">
@@ -315,27 +226,21 @@ function createExplanationModal(explanation, originalText, level) {
     </div>
   `;
 
-  // Add event listeners after creating the modal
   addModalEventListeners(modal);
-
-  modalContainer.appendChild(modal);
+  shadowRoot.appendChild(modal);
   currentModal = modal;
 
-  // Animate in
-  requestAnimationFrame(() => {
-    modal.classList.add('explainer-show');
-    console.log('✅ Explanation modal displayed successfully');
-  });
+  requestAnimationFrame(() => modal.classList.add('explainer-show'));
 }
 
-// Create and show enhanced error modal
+// Show error modal
 function showErrorModal(error) {
-  console.log('❌ Showing error modal:', error);
+  removeModal();
+  modalLocked = false;
+  shadowHost.style.pointerEvents = 'auto';
 
-  cleanRemoveModal();
-  modalLocked = false; // Allow closing for error modal
-
-  const modal = createModal();
+  const modal = document.createElement('div');
+  modal.className = 'explainer-modal';
   modal.innerHTML = `
     <div class="explainer-modal-content explainer-error">
       <div class="explainer-header">
@@ -344,9 +249,7 @@ function showErrorModal(error) {
       </div>
       <div class="explainer-body">
         <p class="explainer-error-message">${error}</p>
-        <p class="explainer-error-help">
-          Don't worry! This usually happens when the AI service is busy. Please try again in a moment, or try selecting a smaller piece of text.
-        </p>
+        <p class="explainer-error-help">Please try again in a moment, or try selecting a smaller piece of text.</p>
       </div>
       <div class="explainer-footer">
         <button class="explainer-btn explainer-btn-primary explainer-close-btn" type="button">
@@ -356,297 +259,180 @@ function showErrorModal(error) {
     </div>
   `;
 
-  // Add event listeners after creating the modal
   addModalEventListeners(modal);
-
-  modalContainer.appendChild(modal);
+  shadowRoot.appendChild(modal);
   currentModal = modal;
 
-  // Animate in
-  requestAnimationFrame(() => {
-    modal.classList.add('explainer-show');
-  });
+  requestAnimationFrame(() => modal.classList.add('explainer-show'));
 }
 
-// Add event listeners to modal elements with bulletproof close functionality - FIXED VERSION
+// Add event listeners
 function addModalEventListeners(modal) {
-  // Close button listeners - BULLETPROOF VERSION
-  const closeButtons = modal.querySelectorAll('.explainer-close, .explainer-close-btn');
-  closeButtons.forEach(btn => {
-    // Clear any existing event listeners by cloning the button
-    const newBtn = btn.cloneNode(true);
-    btn.parentNode.replaceChild(newBtn, btn);
-
-    // Define the close handler function
-    const closeHandler = (e) => {
-      console.log('🔴 Close button clicked!');
+  modal.querySelectorAll('.explainer-close, .explainer-close-btn').forEach(btn => {
+    btn.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      e.stopImmediatePropagation();
-
-      // Force close even if locked (user explicitly clicked close)
-      if (modalLocked) {
-        console.log('🔓 Forcing close despite lock');
-        modalLocked = false;
-      }
-
+      modalLocked = false;
       closeModal();
     };
-
-    // Add multiple event types for maximum reliability
-    newBtn.addEventListener('click', closeHandler, { capture: true, passive: false });
-    newBtn.addEventListener('mousedown', closeHandler, { capture: true, passive: false });
-    newBtn.addEventListener('touchstart', closeHandler, { capture: true, passive: false });
-
-    // Ensure button is always clickable
-    newBtn.style.pointerEvents = 'auto';
-    newBtn.style.cursor = 'pointer';
-    newBtn.style.zIndex = '999999';
-    newBtn.style.position = 'relative';
   });
 
-  // Copy button listener with protection
   const copyBtn = modal.querySelector('.explainer-copy-btn');
   if (copyBtn) {
-    // Clear any existing event listeners by cloning the button
-    const newCopyBtn = copyBtn.cloneNode(true);
-    copyBtn.parentNode.replaceChild(newCopyBtn, copyBtn);
-
-    // Define the copy handler function
-    const copyHandler = (e) => {
-      console.log('📋 Copy button clicked!');
+    copyBtn.onclick = (e) => {
       e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      const textToCopy = newCopyBtn.getAttribute('data-text');
-      copyToClipboard(textToCopy, newCopyBtn);
+      copyToClipboard(copyBtn.dataset.text, copyBtn);
     };
-
-    newCopyBtn.addEventListener('click', copyHandler, { capture: true, passive: false });
-    newCopyBtn.addEventListener('mousedown', copyHandler, { capture: true, passive: false });
-    newCopyBtn.addEventListener('touchstart', copyHandler, { capture: true, passive: false });
-
-    // Ensure button is always clickable
-    newCopyBtn.style.pointerEvents = 'auto';
-    newCopyBtn.style.cursor = 'pointer';
-    newCopyBtn.style.zIndex = '999999';
-    newCopyBtn.style.position = 'relative';
   }
 
-  // Background click listener with better detection
-  modal.addEventListener('click', (e) => {
+  modal.onclick = (e) => {
     if (modalLocked) return;
-
-    const contentBox = modal.querySelector('.explainer-modal-content');
-    if (!contentBox) return;
-
-    const rect = contentBox.getBoundingClientRect();
-    const x = e.clientX;
-    const y = e.clientY;
-
-    // Check if click is outside the content box
-    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-      console.log('🖱️ Background clicked, closing modal');
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
+    const content = modal.querySelector('.explainer-modal-content');
+    if (content && !content.contains(e.target)) {
       closeModal();
     }
-  }, { capture: true, passive: false });
-}
-
-// Create base modal element with enhanced styling and protection
-function createModal() {
-  const modal = document.createElement('div');
-  modal.className = 'explainer-modal';
-  modal.style.cssText = `
-    pointer-events: auto !important;
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    z-index: 2147483647 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    visibility: visible !important;
-  `;
-
-  return modal;
-}
-
-// Close modal function with proper cleanup
-function closeModal() {
-  console.log('🔴 closeModal called, currentModal:', !!currentModal, 'isClosing:', isClosing);
-
-  if (currentModal && !isClosing) {
-    isClosing = true; // Set flag to allow removal
-    modalLocked = false; // Unlock
-
-    console.log('🎬 Starting modal close animation');
-    currentModal.classList.remove('explainer-show');
-
-    setTimeout(() => {
-      console.log('🗑️ Removing modal from DOM');
-      if (currentModal && modalContainer && modalContainer.contains(currentModal)) {
-        // Use direct DOM manipulation to bypass protection
-        modalContainer.removeChild(currentModal);
-      }
-      currentModal = null;
-      isClosing = false; // Reset flag
-      console.log('✅ Modal closed successfully');
-    }, 300);
-  }
-}
-
-// Clean removal of current modal - IMPROVED VERSION
-function cleanRemoveModal() {
-  if (currentModal && !isClosing) {
-    isClosing = true;
-
-    console.log('🧹 Clean removing existing modal');
-    currentModal.classList.remove('explainer-show');
-
-    // Shorter timeout for quicker transitions, but still visible
-    setTimeout(() => {
-      if (currentModal && modalContainer && modalContainer.contains(currentModal)) {
-        modalContainer.removeChild(currentModal);
-      }
-      currentModal = null;
-      isClosing = false;
-    }, 100); // Very short timeout to prevent gap
-  }
-}
-
-// Remove current modal with animation and protection
-function removeModal() {
-  if (currentModal && !isClosing) {
-    isClosing = true;
-
-    currentModal.classList.remove('explainer-show');
-    setTimeout(() => {
-      if (currentModal && currentModal.parentNode) {
-        currentModal.parentNode.removeChild(currentModal);
-      }
-      currentModal = null;
-      modalLocked = false;
-      isClosing = false;
-    }, 300);
-  }
-}
-
-// Get emoji for each level
-function getLevelEmoji(level) {
-  const emojis = {
-    grade5: '🎈',
-    highschool: '🎓',
-    college: '🏛️',
-    expert: '🔬'
   };
+}
+
+// Close modal
+function closeModal() {
+  if (currentModal && !isClosing) {
+    isClosing = true;
+    currentModal.classList.remove('explainer-show');
+
+    setTimeout(() => {
+      if (currentModal && shadowRoot.contains(currentModal)) {
+        shadowRoot.removeChild(currentModal);
+      }
+      currentModal = null;
+      isClosing = false;
+      shadowHost.style.pointerEvents = 'none';
+    }, 300);
+  }
+}
+
+// Remove modal immediately
+function removeModal() {
+  if (currentModal && shadowRoot.contains(currentModal)) {
+    shadowRoot.removeChild(currentModal);
+  }
+  currentModal = null;
+  isClosing = false;
+}
+
+// Utility functions
+function getLevelEmoji(level) {
+  const emojis = { grade5: '🎈', highschool: '🎓', college: '🏛️', expert: '🔬' };
   return emojis[level] || '✨';
 }
 
-// Get human-readable level name
 function getLevelName(level) {
-  const names = {
-    grade5: 'Kid-Friendly',
-    highschool: 'High School',
-    college: 'College Level',
-    expert: 'Expert Analysis'
-  };
+  const names = { grade5: 'Kid-Friendly', highschool: 'High School', college: 'College', expert: 'Expert' };
   return names[level] || 'Standard';
 }
 
-// Truncate text with smart word boundaries
 function truncateText(text, maxLength) {
-  if (text.length <= maxLength) return text;
-
-  const truncated = text.substring(0, maxLength);
-  const lastSpace = truncated.lastIndexOf(' ');
-
-  if (lastSpace > maxLength * 0.8) {
-    return truncated.substring(0, lastSpace) + '...';
-  }
-
-  return truncated + '...';
+  if (!text) return '';
+  return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
 }
 
-// Escape text for template literals and HTML attributes
 function escapeForTemplate(text) {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/`/g, '\\`')
-    .replace(/\$/g, '\\$');
+  if (!text) return '';
+  return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Enhanced copy to clipboard with beautiful feedback
-function copyToClipboard(text, buttonElement) {
-  // Decode HTML entities for copying
-  const decodedText = text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\\`/g, '`')
-    .replace(/\\\$/g, '$');
+async function copyToClipboard(text, button) {
+  try {
+    await navigator.clipboard.writeText(text);
+    const originalText = button.textContent;
+    button.textContent = '✅ Copied!';
+    setTimeout(() => { button.textContent = originalText; }, 2000);
+  } catch (err) {
+    console.error('Copy failed:', err);
+  }
+}
 
-  navigator.clipboard.writeText(decodedText).then(() => {
-    const originalText = buttonElement.textContent;
-    const originalClass = buttonElement.className;
-
-    buttonElement.textContent = '✅ Copied!';
-    buttonElement.className = originalClass + ' success';
-    buttonElement.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
-    buttonElement.style.color = 'white';
-    buttonElement.style.transform = 'translateY(-2px)';
-
-    setTimeout(() => {
-      if (buttonElement) {
-        buttonElement.textContent = originalText;
-        buttonElement.className = originalClass;
-        buttonElement.style.background = '';
-        buttonElement.style.color = '';
-        buttonElement.style.transform = '';
-      }
-    }, 2500);
-  }).catch(err => {
-    console.error('Failed to copy text: ', err);
-
-    // Fallback for older browsers
-    const textArea = document.createElement('textarea');
-    textArea.value = decodedText;
-    textArea.style.position = 'fixed';
-    textArea.style.left = '-999999px';
-    textArea.style.top = '-999999px';
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-
-    try {
-      document.execCommand('copy');
-      buttonElement.textContent = '✅ Copied!';
-      setTimeout(() => {
-        if (buttonElement) {
-          buttonElement.textContent = '📋 Copy Explanation';
-        }
-      }, 2000);
-    } catch (err) {
-      buttonElement.textContent = '❌ Copy failed';
-      setTimeout(() => {
-        if (buttonElement) {
-          buttonElement.textContent = '📋 Copy Explanation';
-        }
-      }, 2000);
+// Get modal styles (include your CSS here)
+function getModalStyles() {
+  return `
+    .explainer-modal {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
+    .explainer-modal.explainer-show { opacity: 1; }
+    .explainer-modal-content {
+      background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+      border-radius: 20px; max-width: 700px; width: 92%; max-height: 85vh;
+      overflow: hidden; transform: scale(0.9) translateY(20px);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+    .explainer-modal.explainer-show .explainer-modal-content { transform: scale(1) translateY(0); }
+    .explainer-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white; padding: 24px 28px; display: flex;
+      align-items: center; justify-content: space-between;
+    }
+    .explainer-header h3 { margin: 0; font-size: 22px; font-weight: 700; display: flex; align-items: center; gap: 12px; }
+    .explainer-level-badge { background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px; }
+    .explainer-close { background: rgba(255,255,255,0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; font-size: 24px; cursor: pointer; }
+    .explainer-close:hover { background: rgba(255,255,255,0.3); }
+    .explainer-body { padding: 28px; overflow-y: auto; max-height: 60vh; }
+    .explainer-original { background: #f1f5f9; border-radius: 12px; padding: 16px; margin-bottom: 20px; }
+    .explainer-original h4, .explainer-explanation h4 { margin: 0 0 8px 0; font-size: 14px; color: #64748b; }
+    .explainer-original p { margin: 0; font-style: italic; color: #475569; }
+    .explainer-content { line-height: 1.7; color: #334155; }
+    .explainer-footer { padding: 20px 28px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; gap: 12px; justify-content: flex-end; }
+    .explainer-btn { padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
+    .explainer-btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+    .explainer-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); }
+    .explainer-btn-secondary { background: white; color: #667eea; border: 2px solid #667eea; }
+    .explainer-spinner { width: 48px; height: 48px; border: 4px solid #e2e8f0; border-top-color: #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 20px auto; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .explainer-loading-dots::after { content: ''; animation: dots 1.5s infinite; }
+    @keyframes dots { 0%, 20% { content: ''; } 40% { content: '.'; } 60% { content: '..'; } 80%, 100% { content: '...'; } }
+    .explainer-error-message { color: #dc2626; font-weight: 500; }
+    .explainer-error-help { color: #64748b; font-size: 14px; }
 
-    document.body.removeChild(textArea);
-  });
+    /* Markdown formatting inside explainer-content */
+    .explainer-content h1, .explainer-content h2, .explainer-content h3, 
+    .explainer-content h4, .explainer-content h5, .explainer-content h6 {
+      margin: 16px 0 8px 0; font-weight: 700; color: #1e293b;
+    }
+    .explainer-content h1 { font-size: 1.5em; }
+    .explainer-content h2 { font-size: 1.3em; }
+    .explainer-content h3 { font-size: 1.1em; }
+    .explainer-content strong, .explainer-content b { font-weight: 700; color: #0f172a; }
+    .explainer-content em, .explainer-content i { font-style: italic; }
+    .explainer-content code {
+      background: #f1f5f9; padding: 2px 6px; border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace; font-size: 0.9em; color: #e11d48;
+    }
+    .explainer-content pre {
+      background: #1e293b; color: #e2e8f0; padding: 16px; border-radius: 8px;
+      overflow-x: auto; margin: 16px 0;
+    }
+    .explainer-content pre code {
+      background: none; padding: 0; color: inherit; font-size: 0.85em;
+    }
+    .explainer-content ul, .explainer-content ol {
+      margin: 12px 0; padding-left: 24px;
+    }
+    .explainer-content li { margin: 6px 0; }
+    .explainer-content blockquote {
+      border-left: 4px solid #667eea; margin: 16px 0; padding: 12px 16px;
+      background: #f8fafc; font-style: italic; color: #475569;
+    }
+    .explainer-content a { color: #667eea; text-decoration: underline; }
+    .explainer-content hr { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
+    .explainer-content table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+    .explainer-content th, .explainer-content td { border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; }
+    .explainer-content th { background: #f1f5f9; font-weight: 600; }
+
+  `;
 }
 
 // Initialize when DOM is ready
@@ -655,6 +441,3 @@ if (document.readyState === 'loading') {
 } else {
   init();
 }
-
-// Also initialize immediately in case DOMContentLoaded already fired
-init();
