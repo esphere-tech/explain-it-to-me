@@ -1,4 +1,4 @@
-import { simplifyText } from './api_v2.js';
+import { simplifyText, askFollowUp } from './api_v2.js';
 
 // Background script for handling API calls and context menus
 chrome.runtime.onInstalled.addListener(() => {
@@ -183,4 +183,43 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
+
+  // Handle follow-up questions
+  if (request.action === 'followUpQuestion') {
+    handleFollowUpQuestion(request, sender.tab?.id);
+    return true;
+  }
 });
+
+// Handle follow-up questions
+async function handleFollowUpQuestion(request, tabId) {
+  if (!tabId) {
+    console.error('No tab ID for follow-up question');
+    return;
+  }
+
+  try {
+    const response = await askFollowUp(
+      request.question,
+      request.context,
+      request.history
+    );
+
+    await sendMessageWithRetry(tabId, {
+      action: 'followUpResponse',
+      response: response
+    });
+
+  } catch (error) {
+    console.error('Error processing follow-up:', error);
+    
+    try {
+      await sendMessageWithRetry(tabId, {
+        action: 'followUpError',
+        error: error.message || 'Failed to get response. Please try again.'
+      });
+    } catch (msgError) {
+      console.error('Failed to send follow-up error:', msgError);
+    }
+  }
+}
